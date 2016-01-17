@@ -1,13 +1,12 @@
-from __future__ import unicode_literals
-import httplib
+__author__ = 'agusx1211'
+
 from operator import attrgetter
 import random
 import datetime
 from django.db import models
 import json
 import time
-
-__author__ = 'agusx1211'
+import requests
 
 
 class User(models.Model):
@@ -29,25 +28,14 @@ class User(models.Model):
 
     def check_token_spotify(self):
         """Returns is the token is valid for Spotify server."""
-        import urllib2
-        req = urllib2.Request('https://api.spotify.com/v1/me')
-        req.add_header('Authorization', 'Bearer ' + self.lastTokenSpotify)
-
-        try:
-            resp = urllib2.urlopen(req)
-        except urllib2.HTTPError, e:
+        auth_header = 'Bearer %s' % self.lastTokenSpotify
+        res = requests.get('https://api.spotify.com/v1/me',
+                           HTTP_AUTHORIZATION=auth_header)
+        if res.status_code == 200:
+            spotify_data = json.loads(res.content)
+            return spotify_data["id"] == self.spotifyId
+        else:
             return False
-        except urllib2.URLError, e:
-            return False
-        except httplib.HTTPException, e:
-            return False
-        except Exception:
-            return False
-
-        content = resp.read()
-
-        spotify_data = json.loads(content)
-        return spotify_data["id"] == self.spotifyId
 
     def join_party(self, party):
         party.users.add(self)
@@ -59,7 +47,7 @@ class User(models.Model):
         return (self.expireDateTokenSpotify > int(time.time())) and (access_token == self.lastTokenSpotify)
 
     def get_current_luck(self):
-        """Devuelve un valor al azar, que sea usado para calcular
+        """Devuelve un valor al azar, que sera usado para calcular
         el orden en el que son reproducidas las canciones en la Party"""
         random.seed(self.email + datetime.datetime.now().strftime("%Y-%m-%d"))
         return random.randint(0, 9223372036854775806)
@@ -77,9 +65,9 @@ class Party(models.Model):
     def __str__(self):
         return self.name
 
-    @staticmethod
-    def create_party(_owner, _name):
-        p = Party(owner=_owner, name=_name)
+    @classmethod
+    def create_party(cls, _owner, _name):
+        p = cls(owner=_owner, name=_name)
         return p
 
     def get_members_in_order(self):
