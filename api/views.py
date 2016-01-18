@@ -1,48 +1,63 @@
 import json
+
 from django.core import serializers
 from django.http import HttpResponse
-from rest_framework.renderers import JSONRenderer
+
+from rest_framework.views import APIView
+from rest_framework import status
+from rest_framework.permissions import AllowAny
+from rest_framework.response import Response
+from rest_framework.decorators import api_view
+
 from api.models import User, Party, Track
-from django.views.decorators.csrf import csrf_exempt
-from api.serializers import AccountSerializer, PartySerializer, TrackSerializer
+from api.serializers import (SpotifyUserSerializer, PartySerializer,
+    TrackSerializer, ErrorSerializer)
 
 
+class DataMixin(object):
+    """ Mixin to parse data from body. """
+    
+    def get_data(self, request):        
+        if "application/json" in request.META['CONTENT_TYPE']:
+            try:
+                data = json.loads(request.body)
+            except ValueError:
+                return Response(ErrorSerializer({
+                    'status_code': 400,
+                    'errors': {'JSON': 'decoding error'},
+                    'message': 'JSON decoding error.'
+                }).data, status=status.HTTP_400_BAD_REQUEST)
+        else:
+            data = request.POST
+        
+        return data
+
+
+@api_view(('GET', ))
 def index(request):
-    return HttpResponse("Hello, world. You're at the polls index.")
+    return Response({'Hello, world': "You're at the api index."})
 
 
-class JSONResponse(HttpResponse):
-    """
-    An HttpResponse that renders its content into JSON.
-    """
-
-    def __init__(self, data, **kwargs):
-        content = JSONRenderer().render(data)
-        kwargs['content_type'] = 'application/json'
-        super(JSONResponse, self).__init__(content, **kwargs)
-
-
-@csrf_exempt
-def login(request):
-    try:
-        received_json_data = json.loads(request.body)
-        u = User(spotifyId=received_json_data['spotifyId'])
-        u.account_type = received_json_data['account_type']
-        u.userName = received_json_data["username"]
-    except ValueError:
-        return HttpResponse("Inavlid Json", status=403)
-
-    if u.lastTokenSpotify != received_json_data["spotifyToken"]:
-        u.lastTokenSpotify = received_json_data["spotifyToken"]
-        if u.check_token_spotify():
-            u.save()
-            serializer = AccountSerializer(u, many=False)
-            return JSONResponse(serializer.data)
-
-    return HttpResponse("Spotify user not valid", status=400)
+class SpotifyLoginView(APIView, DataMixin):
+    """Sign in a user with spotify."""
+    permission_classes = [
+        AllowAny,
+    ]
+    serializer_class = SpotifyUserSerializer
+    
+    def post(self, request, *args, **kwargs):
+        data = self.get_data(request)
+        serializer = self.get_serializer(data=data)
+        if serializer.is_valid():
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        else:
+            return Response(ErrorSerializer({
+                'status_code': 400,
+                'errors': serializer.errors,
+                'message': 'Invalid data'
+            }).data, status=status.HTTP_400_BAD_REQUEST)
 
 
-@csrf_exempt
 def create_party(request):
     try:
         token = request.META["HTTP_AUTHENTICATION"]
@@ -66,7 +81,6 @@ def create_party(request):
     return JSONResponse(serializer.data, status=201)
 
 
-@csrf_exempt
 def set_tracks(request):
     try:
         token = request.META["HTTP_AUTHENTICATION"]
@@ -97,7 +111,6 @@ def set_tracks(request):
     return return_all_tracks(party, owner)
 
 
-@csrf_exempt
 def get_tracks(request):
     try:
         token = request.META["HTTP_AUTHENTICATION"]
@@ -113,7 +126,7 @@ def get_tracks(request):
 
     return return_all_tracks(party, owner)
 
-@csrf_exempt
+
 def del_all_tracks(request):
     try:
         token = request.META["HTTP_AUTHENTICATION"]
@@ -131,7 +144,6 @@ def del_all_tracks(request):
     return return_all_tracks(party, owner)
 
 
-@csrf_exempt
 def del_one(request):
     try:
         token = request.META["HTTP_AUTHENTICATION"]

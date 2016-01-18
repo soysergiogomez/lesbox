@@ -8,32 +8,38 @@ import json
 import time
 import requests
 
+ACCOUNT_FREE = 'f'
+ACCOUNT_PREMIUM = 'p'
+ACCOUNT_TYPE = (
+    (ACCOUNT_FREE, 'Free'),
+    (ACCOUNT_PREMIUM, 'Premium'),
+)
+
 
 class User(models.Model):
-    userName = models.CharField(max_length=60)
-    spotifyId = models.CharField(max_length=60, primary_key=True)
+    
+    ACCOUNT_FREE = ACCOUNT_FREE
+    ACCOUNT_PREMIUM = ACCOUNT_PREMIUM
+    
+    username = models.CharField(max_length=60)
+    spotify_id = models.CharField(max_length=60, primary_key=True)
     email = models.CharField(max_length=255)
-
-    lastTokenSpotify = models.CharField(max_length=255)
-    expireDateTokenSpotify = models.IntegerField()
-
-    ACCOUNT_TYPE = (
-        ('f', 'Free'),
-        ('p', 'Premium'),
-    )
+    token_spotify = models.CharField(max_length=255)
+    expire_token_spotify = models.IntegerField()
     account_type = models.CharField(max_length=1, choices=ACCOUNT_TYPE)
 
     def __str__(self):
         return self.spotifyId
 
-    def check_token_spotify(self):
-        """Returns is the token is valid for Spotify server."""
-        auth_header = 'Bearer %s' % self.lastTokenSpotify
+    @staticmethod
+    def check_token_spotify(token_spotify, spotify_id):
+        """Return True if the token is valid for Spotify server."""
+        auth_header = 'Bearer %s' % token_spotify
         res = requests.get('https://api.spotify.com/v1/me',
                            HTTP_AUTHORIZATION=auth_header)
         if res.status_code == 200:
             spotify_data = json.loads(res.content)
-            return spotify_data["id"] == self.spotifyId
+            return spotify_data["id"] == spotify_id
         else:
             return False
 
@@ -44,7 +50,8 @@ class User(models.Model):
         party.users.remove(self)
 
     def is_authenticated(self, access_token):
-        return (self.expireDateTokenSpotify > int(time.time())) and (access_token == self.lastTokenSpotify)
+        return (self.expire_token_spotify > int(time.time())) and \
+            (access_token == self.token_spotify)
 
     def get_current_luck(self):
         """Devuelve un valor al azar, que sera usado para calcular
@@ -132,26 +139,25 @@ class Track(models.Model):
     def get_user_id(self):
         return self.user.spotifyId
 
-    @staticmethod
-    def create_track(_user, _party, _spotify_track_id, _name, _duration_ms, _explicit, _preview_url, _href, _popularity,
-                     _uri,
-                     _priority):
-        t = Track()
-
-        t.user = _user
-        t.party = _party
-        t.spotify_track_id = _spotify_track_id
-        t.name = _name
-        t.duration_ms = _duration_ms
-        t.explicit = _explicit
-        t.review_url = _preview_url
-        t.href = _href
-        t.popularity = _popularity
-        t.priority = _priority
-        t.uri = _uri
-        t.played = False
-
-        return t
+    @classmethod
+    def create_track(cls, user, party, spotify_track_id, name, duration_ms,
+                     explicit, preview_url, href, popularity, uri, priority):
+        track = cls(
+            user=user,
+            party=party,
+            spotify_track_id=spotify_track_id,
+            name=name,
+            duration_ms=duration_ms,
+            explicit=explicit,
+            review_url=preview_url,
+            href=href,
+            popularity=popularity,
+            priority=priority,
+            uri=uri,
+            played=False
+        )
+        
+        return track
 
     @staticmethod
     def get_all_tracks(party, user):
